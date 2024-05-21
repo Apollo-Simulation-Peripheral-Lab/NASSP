@@ -1825,11 +1825,30 @@ bool Saturn::clbkVCRedrawEvent (int id, int event, SURFHANDLE surf)
 		}
 
 		if (cws.GetMasterAlarm() || cws.GetCWLightTest() == CWS_TEST_LIGHTS_LEFT) {
-			SetVCLighting(vcidx, FullLitMasterAlarm1, MAT_LIGHT, 1.0, 1);
+			SetVCLighting(vcidx, VC_MAT_MASTERALARM_PANEL1, MAT_LIGHT, 1.0, 1);
 		}
 		
 		if (cws.GetMasterAlarm() || cws.GetCWLightTest() == CWS_TEST_LIGHTS_RIGHT) {
-			SetVCLighting(vcidx, FullLitMasterAlarm2, MAT_LIGHT, 1.0, 1);
+			SetVCLighting(vcidx, VC_MAT_MASTERALARM_PANEL2, MAT_LIGHT, 1.0, 1);
+		}
+
+		if (cws.GetMasterAlarm() || cws.GetCWLightTest() == CWS_TEST_LIGHTS_RIGHT) {
+			SetVCLighting(vcidx, VC_MAT_MasterAlarm_LEB, MAT_LIGHT, 1.0, 1);
+		}
+
+		// LEB Conditional Lamps
+		if (cws.IsPowered() && cws.GetGNLampState() != 0) {
+			if (cws.GetGNLampState() == 2 || cws.GetGNPGNSAlarm()) {
+				SetVCLighting(vcidx, VC_MAT_LEB_ConditionLamp_ISS, MAT_LIGHT, Panel100IntegralRotarySwitch.GetOutput(), 1);
+			}
+
+			if (cws.GetGNLampState() == 2 || LightStates[CSM_CWS_CMC_LIGHT + 30 - CWS_LIGHTS_PER_PANEL]){
+				SetVCLighting(vcidx, VC_MAT_LEB_ConditionLamp_CMC, MAT_LIGHT, Panel100IntegralRotarySwitch.GetOutput(), 1);
+			}
+
+			if (cws.GetGNLampState() == 2 || LightStates[CSM_CWS_ISS_LIGHT + 30 - CWS_LIGHTS_PER_PANEL]){
+				SetVCLighting(vcidx, VC_MAT_LEB_ConditionLamp_PGNS, MAT_LIGHT, Panel100IntegralRotarySwitch.GetOutput(), 1);
+			}
 		}
 
 		if (SI_EngineNum > 5){
@@ -5174,5 +5193,32 @@ void Saturn::SetVCLighting(UINT meshidx, DWORD *matList, int EmissionMode, doubl
 #endif
 		}
 	}
-    //sprintf(oapiDebugString(), "%d %lf", m, state);
+}
+
+#ifdef _OPENORBITER
+void Saturn::SetVCLighting(UINT meshidx, int material, MatProp EmissionMode, double state, int cnt)
+#else
+void Saturn::SetVCLighting(UINT meshidx, int material, int EmissionMode, double state, int cnt)
+#endif
+
+{
+	if (vis == NULL || meshidx == -1) return;
+	DEVMESHHANDLE hMesh = GetDevMesh(vis, meshidx);
+
+    if (!hMesh)
+        return;
+
+	gcCore *pCore = gcGetCoreInterface();
+	if (pCore) {
+		FVECTOR4 value;
+		value.r = (float)state;
+		value.g = (float)state;
+		value.b = (float)state;
+		value.a = 1.0;
+#ifdef _OPENORBITER
+		pCore->SetMeshMaterial(hMesh, material, EmissionMode, &value);
+#else
+		pCore->MeshMaterial(hMesh, material, EmissionMode, &value, true);
+#endif
+	}
 }
