@@ -44,7 +44,14 @@ public:
 	DSKY(SoundLib &s, ApolloGuidance &computer, int IOChannel = 015);
 	virtual ~DSKY();
 
-	void Init(e_object *statuslightpower, e_object *segmentlightpower, ContinuousRotationalSwitch *dimmer);
+	void Init(
+		e_object *statuslightpower, 
+		e_object *segmentlightpower, 
+		ContinuousRotationalSwitch *dimmer, 
+		ContinuousRotationalSwitch *integralDimmer,
+		ToggleSwitch *anunOverride,
+		ToggleSwitch *integralOverride
+	);
 	void Reset();
 
 	//
@@ -161,7 +168,6 @@ public:
 	void LoadState(FILEHANDLE scn, char *end_str);
 
 	void SendNetworkPacketDSKY();
-	void SendNetworkPacketNumerics();
 
 	char *GetProg() { return Prog; };
 	char *GetVerb() { return Verb; };
@@ -283,7 +289,10 @@ protected:
 	bool FirstTimeStep;
 	e_object *StatusPower;
 	e_object *SegmentPower;
+	ToggleSwitch *LtgORideAnunSwitch;
+	ToggleSwitch *LtgORideIntegralSwitch;
 	ContinuousRotationalSwitch *DimmerRotationalSwitch;
+	ContinuousRotationalSwitch *IntegralRotationalSwitch;
 
 	//
 	//DSKY output stuff
@@ -292,10 +301,8 @@ protected:
 	bool DSKYOutEnabled;
 	char DSKYOutIp[256];
 	int DSKYOutPort;
-	bool numericsOutEnabled;
-	int NumericsOutPort;
 	WSADATA wsaData;
-	struct sockaddr_in serverAddr[2];
+	struct sockaddr_in serverAddr;
 	int clientSock;
 	
 	//

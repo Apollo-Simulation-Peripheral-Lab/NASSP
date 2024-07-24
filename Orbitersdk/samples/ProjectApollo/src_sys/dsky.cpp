@@ -156,7 +156,11 @@ static int SegmentCount[] = {6, 2, 5, 5, 4, 5, 6, 3, 7, 5 };
 DSKY::DSKY(SoundLib &s, ApolloGuidance &computer, int IOChannel) : soundlib(s), agc(computer)
 
 {
+	LtgORideAnunSwitch = NULL;
+	LtgORideIntegralSwitch = NULL;
 	DimmerRotationalSwitch = NULL;
+	IntegralRotationalSwitch = NULL;
+
 	StatusPower = NULL;
 	SegmentPower = NULL;
 	Reset();
@@ -200,8 +204,6 @@ void DSKY::Reset()
 	DSKYOutEnabled = false;
 	strcpy(DSKYOutIp, "127.0.0.1");
 	DSKYOutPort = 3002;
-	numericsOutEnabled = false;
-	NumericsOutPort = 3003;
 }
 
 DSKY::~DSKY()
@@ -211,12 +213,22 @@ DSKY::~DSKY()
 	WSACleanup();
 }
 
-void DSKY::Init(e_object *statuslightpower, e_object *segmentlightpower, ContinuousRotationalSwitch *dimmer)
+void DSKY::Init(
+	e_object *statuslightpower, 
+	e_object *segmentlightpower, 
+	ContinuousRotationalSwitch *dimmer, 
+	ContinuousRotationalSwitch *integralDimmer,
+	ToggleSwitch *anunOverride,
+	ToggleSwitch *integralOverride
+)
 
 {
 	StatusPower = statuslightpower;
 	SegmentPower = segmentlightpower;
 	DimmerRotationalSwitch = dimmer;
+	IntegralRotationalSwitch = integralDimmer;
+	LtgORideAnunSwitch = anunOverride;
+	LtgORideIntegralSwitch = integralOverride;
 	Reset();
 	FirstTimeStep = true;
 }
@@ -249,26 +261,80 @@ void DSKY::Timestep(double simt)
 	if(FirstTimeStep)
 	{
 		FirstTimeStep = false;
-	    soundlib.LoadSound(Sclick, BUTTON_SOUND);
+		soundlib.LoadSound(Sclick, BUTTON_SOUND);
 		FILEHANDLE DSKYOutConfig = oapiOpenFile("ProjectApollo\\DSKYOut.cfg", FILE_IN_ZEROONFAIL, CONFIG);
 		if (DSKYOutConfig) {
 			oapiReadItem_bool(DSKYOutConfig, "ENABLED", DSKYOutEnabled);
 			oapiReadItem_string(DSKYOutConfig, "IP", DSKYOutIp);
 			oapiReadItem_int(DSKYOutConfig, "DSKYPORT", DSKYOutPort);
-			oapiReadItem_bool(DSKYOutConfig, "NUMERICSENABLED", numericsOutEnabled);
-			oapiReadItem_int(DSKYOutConfig, "NUMERICSPORT", NumericsOutPort);
 
 			//Set up network stuff
 			WSAStartup(0x0202, &wsaData);
-			serverAddr[0].sin_family = AF_INET;
-			serverAddr[1].sin_family = AF_INET;
-			serverAddr[0].sin_addr.s_addr = inet_addr(DSKYOutIp);
-			serverAddr[1].sin_addr.s_addr = inet_addr(DSKYOutIp);
-			serverAddr[0].sin_port = htons((u_short)DSKYOutPort);
-			serverAddr[1].sin_port = htons((u_short)NumericsOutPort);
+			serverAddr.sin_family = AF_INET;
+			serverAddr.sin_addr.s_addr = inet_addr(DSKYOutIp);
+			serverAddr.sin_port = htons((u_short)DSKYOutPort);
 			clientSock = socket(PF_INET, SOCK_DGRAM, 0);
+			
+			// Set socket as nonblocking
+			int iMode = 1; // 0 = BLOCKING, 1 = NONBLOCKING
+			if(ioctlsocket(clientSock, FIONBIO, (u_long FAR*) &iMode) != 0){
+				closesocket(clientSock);
+				WSACleanup();
+			}
 		}
 		oapiCloseFile(DSKYOutConfig, FILE_IN_ZEROONFAIL);
+	}
+	if(DSKYOutEnabled){
+		char buffer[512];
+		int recvLen = recv(clientSock, buffer, sizeof(buffer) - 1, 0);
+
+		if (recvLen != SOCKET_ERROR) {
+			buffer[recvLen] = '\0';  // Null-terminate the received data
+			
+			if (strcmp(buffer, "v") == 0) {
+				this->VerbPressed();
+			} else if (strcmp(buffer, "n") == 0) {
+				this->NounPressed();
+			} else if (strcmp(buffer, "+") == 0) {
+				this->PlusPressed();
+			} else if (strcmp(buffer, "-") == 0) {
+				this->MinusPressed();
+			} else if (strcmp(buffer, "0") == 0) {
+				this->NumberPressed(0);
+			} else if (strcmp(buffer, "1") == 0) {
+				this->NumberPressed(1);
+			} else if (strcmp(buffer, "2") == 0) {
+				this->NumberPressed(2);
+			} else if (strcmp(buffer, "3") == 0) {
+				this->NumberPressed(3);
+			} else if (strcmp(buffer, "4") == 0) {
+				this->NumberPressed(4);
+			} else if (strcmp(buffer, "5") == 0) {
+				this->NumberPressed(5);
+			} else if (strcmp(buffer, "6") == 0) {
+				this->NumberPressed(6);
+			} else if (strcmp(buffer, "7") == 0) {
+				this->NumberPressed(7);
+			} else if (strcmp(buffer, "8") == 0) {
+				this->NumberPressed(8);
+			} else if (strcmp(buffer, "9") == 0) {
+				this->NumberPressed(9);
+			} else if (strcmp(buffer, "c") == 0) {
+				this->ClearPressed();
+			} else if (strcmp(buffer, "p") == 0) {
+				this->ProceedPressed();
+			} else if (strcmp(buffer, "o") == 0) {
+				this->ProceedReleased();
+			} else if (strcmp(buffer, "k") == 0) {
+				this->KeyRel();
+			} else if (strcmp(buffer, "e") == 0) {
+				this->EnterPressed();
+			} else if (strcmp(buffer, "r") == 0) {
+				this->ResetPressed();
+			}
+
+			//sprintf(oapiDebugString(), buffer);
+		}
 	}
 }
 
@@ -1475,6 +1541,9 @@ void DSKY::SendNetworkPacketDSKY()
 		std::string r3 = "\"r3\": ";
 		std::string alarms = "\"alarms\": ";
 		std::string powered = "\"powered\": ";
+		std::string anun = "\"anun\": ";
+		std::string numerics = "\"numerics\": ";
+		std::string integral = "\"integral\": ";
 
 		compLight = compLight + "\"" + B2S(CompActy) + "\",";
 		prog = prog + "\"" + Prog + "\",";
@@ -1484,7 +1553,7 @@ void DSKY::SendNetworkPacketDSKY()
 		r1 = r1 + "\"" + R1 + "\",";
 		r2 = r2 + "\"" + R2 + "\",";
 		r3 = r3 + "\"" + R3 + "\",";
-
+		
 		alarms = alarms + "\"" + B2S(UplinkLight) + " " + B2S(NoAttLight) + " " + B2S(StbyLight) + " "
 			+ B2S(KbRelLight) + " " + B2S(OprErrLight) + " " + B2S(TempLight) + " " + B2S(GimbalLockLight)
 			+ " " + B2S(ProgLight) + " " + B2S(RestartLight) + " " + B2S(TrackerLight) + " " + B2S(VelLight)
@@ -1492,28 +1561,31 @@ void DSKY::SendNetworkPacketDSKY()
 
 		bool elPowered = true;
 		if (!IsSegmentPowered() || ELOff) { elPowered = false; }
-		powered = powered + "\"" + B2S(IsStatusPowered()) + " " + B2S(elPowered) + "\"";
+		powered = powered + "\"" + B2S(IsStatusPowered()) + " " + B2S(elPowered) + "\",";
 
-		std::string message = "{" + compLight + prog + verb + noun + flashing + r1 + r2 + r3 + alarms + powered + "}";
-
-		sendto(clientSock, message.c_str(), message.length(), 0, (LPSOCKADDR)&serverAddr[0], sizeof(struct sockaddr));
-		//strcpy(oapiDebugString(), message.c_str());
-
-		SendNetworkPacketNumerics();
-	}
-}
-
-void DSKY::SendNetworkPacketNumerics()
-{
-	if (numericsOutEnabled == true) {
-		std::string message = "{\"brightness\": \"";
+		char anunLvl[256] = "";
 		char numLvl[256] = "";
+		char intLvl[256] = "";
 
+		sprintf(anunLvl, "%lf", DimmerRotationalSwitch->GetOutput());
 		sprintf(numLvl, "%lf", DimmerRotationalSwitch->GetOutput());
+		sprintf(intLvl, "%lf", IntegralRotationalSwitch->GetOutput());
 
-		message = message + numLvl + "\"}";
+		if(LtgORideAnunSwitch && LtgORideAnunSwitch->IsUp()){
+			sprintf(anunLvl, "1.0");
+		}
 
-		sendto(clientSock, message.c_str(), message.length(), 0, (LPSOCKADDR)&serverAddr[1], sizeof(struct sockaddr));
+		if(LtgORideIntegralSwitch && LtgORideIntegralSwitch->IsUp()){
+			sprintf(intLvl, "1.0");
+		}
+
+		anun = anun + "\"" + anunLvl + "\",";
+		numerics = numerics + "\"" + numLvl + "\",";
+		integral = integral + "\"" + intLvl + "\"";
+
+		std::string message = "{" + compLight + prog + verb + noun + flashing + r1 + r2 + r3 + alarms + powered + anun + numerics + integral + "}";
+
+		sendto(clientSock, message.c_str(), message.length(), 0, (LPSOCKADDR)&serverAddr, sizeof(struct sockaddr));
 		//strcpy(oapiDebugString(), message.c_str());
 	}
 }
